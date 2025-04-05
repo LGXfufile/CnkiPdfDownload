@@ -610,14 +610,16 @@ function addDownloadButtons() {
         } : null;
       }).filter(article => article !== null);
 
-      // 发送批量下载请求
+      // 发送批量下载请求，使用新的批量下载消息类型
       chrome.runtime.sendMessage({
-        action: 'silentBatchDownload',
+        action: 'batchDownloadWithSingleSave',
         articles: articles
       }, response => {
         if (response?.error) {
           debugLog('批量下载出错:', response.error);
           alert(`批量下载失败: ${response.error}`);
+        } else {
+          debugLog('批量下载已开始');
         }
       });
 

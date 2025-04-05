@@ -204,4 +204,72 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     downloadNext();
     return true;
   }
+
+  if (request.action === 'batchDownloadWithSingleSave') {
+    const articles = request.articles;
+    let currentIndex = 0;
+    
+    // 创建一个下载队列处理函数
+    async function processDownloadQueue() {
+      if (currentIndex >= articles.length) {
+        sendResponse({ success: true });
+        return;
+      }
+
+      const article = articles[currentIndex];
+      
+      try {
+        // 创建隐藏的标签页打开文章
+        const tab = await chrome.tabs.create({ 
+          url: article.url, 
+          active: false 
+        });
+
+        // 等待页面加载完成
+        chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            
+            // 在页面中查找并触发下载
+            chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              function: () => {
+                const pdfDownBtn = document.querySelector('#pdfDown');
+                if (pdfDownBtn) {
+                  pdfDownBtn.click();
+                  return true;
+                }
+                return false;
+              }
+            }, () => {
+              // 关闭文章标签页
+              setTimeout(() => {
+                chrome.tabs.remove(tab.id);
+                currentIndex++;
+                // 继续处理下一篇文章
+                setTimeout(processDownloadQueue, 2000);
+              }, 2000);
+            });
+          }
+        });
+      } catch (error) {
+        console.error('下载文章出错:', error);
+        currentIndex++;
+        setTimeout(processDownloadQueue, 2000);
+      }
+    }
+
+    // 开始处理下载队列
+    processDownloadQueue();
+    return true; // 保持消息通道开放
+  }
+});
+
+// 监听下载事件
+chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+  // 检查是否是 PDF 文件
+  if (downloadItem.filename.endsWith('.pdf')) {
+    // 使用原始文件名建议
+    suggest();
+  }
 });
