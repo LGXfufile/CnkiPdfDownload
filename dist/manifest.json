@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "CNKI PDF Downloader Pro",
+  "version": "1.0.0",
+  "description": "Professional tool for downloading CNKI PDFs with batch support",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "downloads",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.cnki.net/*",
+    "https://*.webvpn.zisu.edu.cn/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/1.jpg",
+      "48": "assets/2.jpg",
+      "128": "assets/3.jpg"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.cnki.net/*",
+        "https://*.webvpn.zisu.edu.cn/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "icons": {
+    "16": "assets/1.jpg",
+    "48": "assets/2.jpg",
+    "128": "assets/3.jpg"
+  }
+}

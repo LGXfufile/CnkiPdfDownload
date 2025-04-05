@@ -1,0 +1,9 @@
+/* CNKI PDF Downloader 样式 */
+.cnki-pdf-downloader-highlight {
+  border: 2px solid #409EFF !important;
+  transition: all 0.3s ease;
+}
+
+.cnki-pdf-downloader-highlight:hover {
+  background-color: rgba(64, 158, 255, 0.1);
+} 
