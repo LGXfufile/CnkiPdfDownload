@@ -286,6 +286,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true; // 保持消息通道开放
   }
+
+  if (request.action === 'showNotification') {
+    showNotification(request.message);
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
 // 处理PDF下载
@@ -697,3 +703,107 @@ function setupObserver() {
 
 // 启动扩展
 initializeExtension();
+
+// 修改提示框样式和函数
+function createStyleElement() {
+    // 等待 DOM 加载完成
+    if (!document.body) {
+        window.addEventListener('DOMContentLoaded', createStyleElement);
+        return;
+    }
+
+    const style = document.createElement('style');
+    style.textContent = `
+        .cnki-download-notification {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            z-index: 9999;
+            animation: fadeInOut 3s ease-in-out;
+            font-size: 14px;
+            max-width: 80%;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            white-space: pre-line;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translate(-50%, -40%); }
+            10% { opacity: 1; transform: translate(-50%, -50%); }
+            90% { opacity: 1; transform: translate(-50%, -50%); }
+            100% { opacity: 0; transform: translate(-50%, -60%); }
+        }
+
+        .selected-article {
+            background-color: #f0f7ff !important;
+        }
+    `;
+    document.body.appendChild(style);
+}
+
+// 修改提示框函数
+function showNotification(message) {
+    // 移除可能存在的旧通知
+    const existingNotification = document.querySelector('.cnki-download-notification');
+    if (existingNotification) {
+        existingNotification.remove();
+    }
+
+    const notification = document.createElement('div');
+    notification.className = 'cnki-download-notification';
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    // 3秒后自动移除提示
+    setTimeout(() => {
+        if (notification && notification.parentNode) {
+            notification.remove();
+        }
+    }, 3000);
+}
+
+// 初始化样式
+createStyleElement();
+
+// 在页面加载完成后执行初始化
+document.addEventListener('DOMContentLoaded', () => {
+    // ... 其他代码 ...
+
+    // 在checkbox change事件处理中添加提示
+    document.addEventListener('change', (event) => {
+        if (event.target.type === 'checkbox') {
+            const row = event.target.closest('tr');
+            if (row && row.querySelector('a.fz14')) {
+                if (event.target.checked) {
+                    row.classList.add('selected-article');
+                    const title = row.querySelector('a.fz14').textContent.trim();
+                    showNotification(`已选择文章：${title}`);
+                } else {
+                    row.classList.remove('selected-article');
+                    showNotification('已取消选择文章');
+                }
+            }
+        }
+    });
+
+    // 添加下载按钮的点击提示
+    const downloadBtn = document.querySelector('#downloadBtn');
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+            showNotification('开始下载文章...');
+        });
+    }
+
+    const batchDownloadBtn = document.querySelector('#batchDownloadBtn');
+    if (batchDownloadBtn) {
+        batchDownloadBtn.addEventListener('click', () => {
+            const selectedCount = document.querySelectorAll('input[type="checkbox"]:checked').length;
+            showNotification(`开始批量下载 ${selectedCount} 篇文章...`);
+        });
+    }
+});
