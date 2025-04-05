@@ -34,7 +34,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               // 页面加载完成后，再次尝试下载
               setTimeout(async () => {
                 await chrome.tabs.sendMessage(tab.id, { action: 'downloadCurrentPDF' });
-              }, 2000); // 给页面2秒钟加载时间
+              }, 2000);
             }
           });
         }
@@ -115,6 +115,92 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     // 开始批量下载
+    downloadNext();
+    return true;
+  }
+
+  if (request.action === 'silentDownloadPDF') {
+    // 在后台创建标签页
+    chrome.tabs.create({ 
+      url: request.url, 
+      active: false 
+    }, tab => {
+      // 监听标签页加载完成
+      chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+        if (tabId === tab.id && info.status === 'complete') {
+          // 移除监听器
+          chrome.tabs.onUpdated.removeListener(listener);
+          
+          // 在文章详情页面执行脚本查找并点击下载按钮
+          chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            function: () => {
+              const pdfDownBtn = document.querySelector('#pdfDown');
+              if (pdfDownBtn) {
+                pdfDownBtn.click();
+                return true;
+              }
+              return false;
+            }
+          }, (results) => {
+            // 关闭临时打开的标签页
+            setTimeout(() => {
+              chrome.tabs.remove(tab.id);
+            }, 2000);
+
+            if (!results || !results[0]?.result) {
+              sendResponse({ error: '未找到PDF下载按钮' });
+            } else {
+              sendResponse({ success: true });
+            }
+          });
+        }
+      });
+    });
+    return true; // 保持消息通道开放
+  }
+
+  if (request.action === 'silentBatchDownload') {
+    const articles = request.articles;
+    let currentIndex = 0;
+
+    function downloadNext() {
+      if (currentIndex >= articles.length) {
+        sendResponse({ success: true });
+        return;
+      }
+
+      const article = articles[currentIndex];
+      chrome.tabs.create({ 
+        url: article.url, 
+        active: false 
+      }, tab => {
+        chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            
+            chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              function: () => {
+                const pdfDownBtn = document.querySelector('#pdfDown');
+                if (pdfDownBtn) {
+                  pdfDownBtn.click();
+                  return true;
+                }
+                return false;
+              }
+            }, () => {
+              setTimeout(() => {
+                chrome.tabs.remove(tab.id);
+                currentIndex++;
+                setTimeout(downloadNext, 2000); // 添加延迟避免请求过于频繁
+              }, 2000);
+            });
+          }
+        });
+      });
+    }
+
     downloadNext();
     return true;
   }

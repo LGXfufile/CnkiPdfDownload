@@ -40,18 +40,17 @@ document.addEventListener('change', (e) => {
           // 更新选中效果
           updateSelectedArticle(row);
 
-          // 使用修改后的下载处理函数
-          handleArticleDownload(selectedArticleUrl)
-            .then(result => {
-              if (result && result.error) {
-                debugLog('下载过程出错:', result.error);
-                alert(`下载失败: ${result.error}`);
-              }
-            })
-            .catch(error => {
-              debugLog('下载过程出错:', error);
-              alert(`下载失败: ${error.message}`);
-            });
+          // 直接发送消息给 background script 处理下载
+          chrome.runtime.sendMessage({
+            action: 'silentDownloadPDF',
+            url: selectedArticleUrl,
+            title: selectedArticleTitle
+          }, response => {
+            if (response?.error) {
+              debugLog('下载过程出错:', response.error);
+              alert(`下载失败: ${response.error}`);
+            }
+          });
 
         } else if (!checkbox.checked) {
           // 如果取消选中，清除选择状态
@@ -535,7 +534,16 @@ function addDownloadButtons() {
   `;
   singleDownloadBtn.onclick = () => {
     if (selectedArticleUrl) {
-      handleArticleDownload(selectedArticleUrl);
+      chrome.runtime.sendMessage({
+        action: 'silentDownloadPDF',
+        url: selectedArticleUrl,
+        title: selectedArticleTitle
+      }, response => {
+        if (response?.error) {
+          debugLog('下载过程出错:', response.error);
+          alert(`下载失败: ${response.error}`);
+        }
+      });
     } else {
       alert('请先选择要下载的文章');
     }
@@ -560,18 +568,12 @@ function addDownloadButtons() {
   `;
   batchDownloadBtn.onclick = async () => {
     try {
-      // 检查扩展是否有效
-      if (!chrome.runtime?.id) {
-        alert('扩展已更新，请刷新页面后重试');
-        return;
-      }
-
       const selectedCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked');
       if (selectedCheckboxes.length === 0) {
         alert('请先选择要下载的文章');
         return;
       }
-      
+
       const articles = Array.from(selectedCheckboxes).map(checkbox => {
         const row = checkbox.closest('tr');
         const titleLink = row.querySelector('a.fz14');
@@ -581,25 +583,17 @@ function addDownloadButtons() {
         } : null;
       }).filter(article => article !== null);
 
-      // 使用队列处理下载
-      for (const article of articles) {
-        try {
-          debugLog('开始下载文章:', article.title);
-          const result = await handleArticleDownload(article.url);
-          
-          if (result && result.error) {
-            debugLog(`文章 "${article.title}" 下载失败:`, result.error);
-          } else {
-            debugLog(`文章 "${article.title}" 下载已开始`);
-          }
-          
-          // 在每次下载之间添加延迟
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        } catch (error) {
-          debugLog(`文章 "${article.title}" 下载出错:`, error);
-          continue;
+      // 发送批量下载请求给 background script
+      chrome.runtime.sendMessage({
+        action: 'silentBatchDownload',
+        articles: articles
+      }, response => {
+        if (response?.error) {
+          debugLog('批量下载出错:', response.error);
+          alert(`批量下载失败: ${response.error}`);
         }
-      }
+      });
+
     } catch (error) {
       debugLog('批量下载出错:', error);
       alert('下载过程出错，请刷新页面重试');
