@@ -37,20 +37,8 @@ document.addEventListener('change', (e) => {
             url: selectedArticleUrl
           });
 
-          // 更新选中效果
+          // 只更新选中效果，不触发下载
           updateSelectedArticle(row);
-
-          // 直接发送消息给 background script 处理下载
-          chrome.runtime.sendMessage({
-            action: 'silentDownloadPDF',
-            url: selectedArticleUrl,
-            title: selectedArticleTitle
-          }, response => {
-            if (response?.error) {
-              debugLog('下载过程出错:', response.error);
-              alert(`下载失败: ${response.error}`);
-            }
-          });
 
         } else if (!checkbox.checked) {
           // 如果取消选中，清除选择状态
@@ -533,11 +521,38 @@ function addDownloadButtons() {
     line-height: 1;
   `;
   singleDownloadBtn.onclick = () => {
-    if (selectedArticleUrl) {
+    // 获取所有选中的复选框（包括全选框）
+    const allCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+    
+    // 过滤掉全选框，只获取文章的复选框
+    const selectedCheckboxes = Array.from(allCheckboxes).filter(checkbox => {
+      // 检查是否是文章行的复选框（通过查找父级tr和文章链接来判断）
+      const row = checkbox.closest('tr');
+      return row && row.querySelector('a.fz14');
+    });
+    
+    // 如果选中多个文章，提示使用批量下载
+    if (selectedCheckboxes.length > 1) {
+      alert('已选择多篇文章，请使用批量下载按钮');
+      return;
+    }
+    
+    // 如果没有选中任何文章
+    if (selectedCheckboxes.length === 0) {
+      alert('请先选择要下载的文章');
+      return;
+    }
+
+    // 获取选中文章的信息
+    const row = selectedCheckboxes[0].closest('tr');
+    const titleLink = row.querySelector('a.fz14');
+    
+    if (titleLink) {
+      // 发送下载请求
       chrome.runtime.sendMessage({
         action: 'silentDownloadPDF',
-        url: selectedArticleUrl,
-        title: selectedArticleTitle
+        url: titleLink.href,
+        title: titleLink.textContent.trim()
       }, response => {
         if (response?.error) {
           debugLog('下载过程出错:', response.error);
@@ -545,7 +560,7 @@ function addDownloadButtons() {
         }
       });
     } else {
-      alert('请先选择要下载的文章');
+      alert('无法获取文章信息');
     }
   };
 
@@ -568,13 +583,25 @@ function addDownloadButtons() {
   `;
   batchDownloadBtn.onclick = async () => {
     try {
-      const selectedCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+      // 获取所有选中的复选框（过滤掉全选框）
+      const selectedCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
+        .filter(checkbox => {
+          const row = checkbox.closest('tr');
+          return row && row.querySelector('a.fz14');
+        });
+
       if (selectedCheckboxes.length === 0) {
         alert('请先选择要下载的文章');
         return;
       }
 
-      const articles = Array.from(selectedCheckboxes).map(checkbox => {
+      // 如果只选择了一篇文章，提示使用单个下载
+      if (selectedCheckboxes.length === 1) {
+        alert('只选择了一篇文章，请使用单个下载按钮');
+        return;
+      }
+
+      const articles = selectedCheckboxes.map(checkbox => {
         const row = checkbox.closest('tr');
         const titleLink = row.querySelector('a.fz14');
         return titleLink ? {
@@ -583,7 +610,7 @@ function addDownloadButtons() {
         } : null;
       }).filter(article => article !== null);
 
-      // 发送批量下载请求给 background script
+      // 发送批量下载请求
       chrome.runtime.sendMessage({
         action: 'silentBatchDownload',
         articles: articles
