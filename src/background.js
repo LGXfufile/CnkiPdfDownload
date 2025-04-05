@@ -209,54 +209,67 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const articles = request.articles;
     let currentIndex = 0;
     
+    console.log(`[批量下载] 开始处理 ${articles.length} 篇文章的下载队列`);
+    
     // 创建一个下载队列处理函数
     async function processDownloadQueue() {
-      if (currentIndex >= articles.length) {
-        sendResponse({ success: true });
-        return;
-      }
+        if (currentIndex >= articles.length) {
+            console.log('[批量下载] 所有文章处理完成');
+            sendResponse({ success: true });
+            return;
+        }
 
-      const article = articles[currentIndex];
+        const article = articles[currentIndex];
+        console.log(`[批量下载] 正在处理第 ${currentIndex + 1}/${articles.length} 篇文章:`, article.title);
       
-      try {
-        // 创建隐藏的标签页打开文章
-        const tab = await chrome.tabs.create({ 
-          url: article.url, 
-          active: false 
-        });
-
-        // 等待页面加载完成
-        chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-          if (tabId === tab.id && info.status === 'complete') {
-            chrome.tabs.onUpdated.removeListener(listener);
-            
-            // 在页面中查找并触发下载
-            chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              function: () => {
-                const pdfDownBtn = document.querySelector('#pdfDown');
-                if (pdfDownBtn) {
-                  pdfDownBtn.click();
-                  return true;
-                }
-                return false;
-              }
-            }, () => {
-              // 关闭文章标签页
-              setTimeout(() => {
-                chrome.tabs.remove(tab.id);
-                currentIndex++;
-                // 继续处理下一篇文章
-                setTimeout(processDownloadQueue, 2000);
-              }, 2000);
+        try {
+            // 创建隐藏的标签页打开文章
+            console.log(`[批量下载] 创建新标签页打开文章: ${article.url}`);
+            const tab = await chrome.tabs.create({ 
+                url: article.url, 
+                active: false 
             });
-          }
-        });
-      } catch (error) {
-        console.error('下载文章出错:', error);
-        currentIndex++;
-        setTimeout(processDownloadQueue, 2000);
-      }
+
+            // 等待页面加载完成
+            chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+                if (tabId === tab.id && info.status === 'complete') {
+                    console.log(`[批量下载] 文章页面加载完成，准备查找下载按钮`);
+                    chrome.tabs.onUpdated.removeListener(listener);
+                    
+                    // 在页面中查找并触发下载
+                    chrome.scripting.executeScript({
+                        target: { tabId: tab.id },
+                        function: () => {
+                            const pdfDownBtn = document.querySelector('#pdfDown');
+                            if (pdfDownBtn) {
+                                console.log('[批量下载] 找到下载按钮，触发点击');
+                                pdfDownBtn.click();
+                                return true;
+                            }
+                            console.log('[批量下载] 未找到下载按钮');
+                            return false;
+                        }
+                    }, (results) => {
+                        const success = results && results[0]?.result;
+                        console.log(`[批量下载] 下载按钮点击${success ? '成功' : '失败'}`);
+                        
+                        // 关闭文章标签页
+                        setTimeout(() => {
+                            console.log(`[批量下载] 关闭标签页，准备处理下一篇文章`);
+                            chrome.tabs.remove(tab.id);
+                            currentIndex++;
+                            // 继续处理下一篇文章
+                            setTimeout(processDownloadQueue, 2000);
+                        }, 3000); // 增加等待时间，确保下载开始
+                    });
+                }
+            });
+        } catch (error) {
+            console.error(`[批量下载] 处理文章出错:`, error);
+            console.log(`[批量下载] 跳过当前文章，继续处理下一篇`);
+            currentIndex++;
+            setTimeout(processDownloadQueue, 2000);
+        }
     }
 
     // 开始处理下载队列
@@ -269,7 +282,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
   // 检查是否是 PDF 文件
   if (downloadItem.filename.endsWith('.pdf')) {
-    // 使用原始文件名建议
+    console.log(`[下载] 开始下载文件: ${downloadItem.filename}`);
     suggest();
+  }
+});
+
+// 添加下载状态监听
+chrome.downloads.onChanged.addListener((delta) => {
+  if (delta.state) {
+    console.log(`[下载] 文件下载状态变更:`, delta);
   }
 });
