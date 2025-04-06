@@ -2,6 +2,10 @@
 let selectedArticleUrl = null;
 let selectedArticleTitle = null;
 
+// 添加重试计数器
+let retryCount = 0;
+const MAX_RETRIES = 3;
+
 // 调试日志函数
 function debugLog(message, data = null) {
   const logStyle = 'background: #0066cc; color: white; padding: 2px 5px; border-radius: 3px;';
@@ -473,232 +477,258 @@ function updateSelectedArticle(element) {
 
 // 修改添加下载按钮的函数
 function addDownloadButtons() {
-  debugLog('开始添加下载按钮');
-  
-  // 使用 let 而不是 const，因为变量可能会被重新赋值
-  let themeButton = document.querySelector('.theme-title, .subject-title, [data-type="subject"], button.subject');
-  
-  if (!themeButton) {
-    // 尝试通过文本内容查找
-    const buttons = Array.from(document.querySelectorAll('button, div'));
-    const themeBtn = buttons.find(btn => btn.textContent.includes('主题'));
+    debugLog(`开始添加下载按钮 (重试次数: ${retryCount}/${MAX_RETRIES})`);
     
-    if (!themeBtn) {
-      debugLog('未找到主题按钮，将在1秒后重试');
-      setTimeout(addDownloadButtons, 1000);
-      return;
-    } else {
-      themeButton = themeBtn; // 现在可以重新赋值了
-    }
-  }
-
-  // 检查是否已经添加过按钮
-  if (document.querySelector('.cnki-download-buttons')) {
-    debugLog('下载按钮已存在，无需重复添加');
-    return;
-  }
-
-  // 创建下载按钮容器
-  const buttonContainer = document.createElement('div');
-  buttonContainer.className = 'cnki-download-buttons';
-  buttonContainer.style.cssText = `
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    margin-right: 10px;
-    vertical-align: middle;
-  `;
-
-  // 创建单个下载按钮
-  const singleDownloadBtn = document.createElement('button');
-  singleDownloadBtn.textContent = '单个下载';
-  singleDownloadBtn.className = 'cnki-download-btn secondary';
-  singleDownloadBtn.style.cssText = `
-    background-color: #f5f6f7;
-    color: #1e80ff;
-    border: 1px solid #e4e6eb;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    height: 26px;
-    line-height: 1;
-  `;
-  singleDownloadBtn.onclick = () => {
-    // 获取所有选中的复选框（包括全选框）
-    const allCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked');
-    
-    // 过滤掉全选框，只获取文章的复选框
-    const selectedCheckboxes = Array.from(allCheckboxes).filter(checkbox => {
-      // 检查是否是文章行的复选框（通过查找父级tr和文章链接来判断）
-      const row = checkbox.closest('tr');
-      return row && row.querySelector('a.fz14');
-    });
-    
-    // 如果选中多个文章，提示使用批量下载
-    if (selectedCheckboxes.length > 1) {
-      alert('已选择多篇文章，请使用批量下载按钮');
-      return;
-    }
-    
-    // 如果没有选中任何文章
-    if (selectedCheckboxes.length === 0) {
-      alert('请先选择要下载的文章');
-      return;
-    }
-
-    // 获取选中文章的信息
-    const row = selectedCheckboxes[0].closest('tr');
-    const titleLink = row.querySelector('a.fz14');
-    
-    if (titleLink) {
-      // 发送下载请求
-      chrome.runtime.sendMessage({
-        action: 'silentDownloadPDF',
-        url: titleLink.href,
-        title: titleLink.textContent.trim()
-      }, response => {
-        if (response?.error) {
-          debugLog('下载过程出错:', response.error);
-          alert(`下载失败: ${response.error}`);
-        }
-      });
-    } else {
-      alert('无法获取文章信息');
-    }
-  };
-
-  // 创建批量下载按钮
-  const batchDownloadBtn = document.createElement('button');
-  batchDownloadBtn.textContent = '批量下载';
-  batchDownloadBtn.className = 'cnki-download-btn primary';
-  batchDownloadBtn.style.cssText = `
-    background-color: #1e80ff;
-    color: white;
-    border: none;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    height: 26px;
-    line-height: 1;
-  `;
-  batchDownloadBtn.onclick = async () => {
-    try {
-      // 获取所有选中的复选框（过滤掉全选框）
-      const selectedCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
-        .filter(checkbox => {
-          const row = checkbox.closest('tr');
-          return row && row.querySelector('a.fz14');
-        });
-
-      if (selectedCheckboxes.length === 0) {
-        alert('请先选择要下载的文章');
+    // 如果重试次数超过限制，停止重试
+    if (retryCount >= MAX_RETRIES) {
+        debugLog('已达到最大重试次数，停止重试');
+        showNotification('无法加载下载按钮，请刷新页面重试');
         return;
-      }
+    }
 
-      // 如果只选择了一篇文章，提示使用单个下载
-      if (selectedCheckboxes.length === 1) {
-        alert('只选择了一篇文章，请使用单个下载按钮');
+    // 首先检查是否已经添加过按钮
+    if (document.querySelector('.cnki-download-buttons')) {
+        debugLog('下载按钮已存在，无需重复添加');
         return;
-      }
+    }
 
-      const articles = selectedCheckboxes.map(checkbox => {
-        const row = checkbox.closest('tr');
-        const titleLink = row.querySelector('a.fz14');
-        return titleLink ? {
-          url: titleLink.href,
-          title: titleLink.textContent.trim()
-        } : null;
-      }).filter(article => article !== null);
+    // 尝试多种方式查找合适的插入位置
+    let insertTarget = null;
+    let insertBefore = null;
 
-      // 发送批量下载请求，使用新的批量下载消息类型
-      chrome.runtime.sendMessage({
-        action: 'batchDownloadWithSingleSave',
-        articles: articles
-      }, response => {
-        if (response?.error) {
-          debugLog('批量下载出错:', response.error);
-          alert(`批量下载失败: ${response.error}`);
-        } else {
-          debugLog('批量下载已开始');
+    // 1. 尝试查找主题按钮
+    insertTarget = document.querySelector('.theme-title, .subject-title');
+    
+    // 2. 如果没找到，尝试查找工具栏
+    if (!insertTarget) {
+        insertTarget = document.querySelector('.toolbar, .tools, .tool-bar');
+    }
+    
+    // 3. 如果还没找到，尝试查找表格上方的操作区域
+    if (!insertTarget) {
+        insertTarget = document.querySelector('.operat, .operation, .grid-tool');
+    }
+
+    // 4. 如果依然没找到，尝试查找表格区域
+    if (!insertTarget) {
+        const tableArea = document.querySelector('.result-table-list, .GridTableContent');
+        if (tableArea) {
+            // 在表格前创建一个新的div作为按钮容器
+            const newContainer = document.createElement('div');
+            newContainer.className = 'cnki-custom-toolbar';
+            newContainer.style.cssText = 'margin: 10px 0; padding: 10px; background: #f5f6f7; border-radius: 4px;';
+            tableArea.parentNode.insertBefore(newContainer, tableArea);
+            insertTarget = newContainer;
         }
-      });
-
-    } catch (error) {
-      debugLog('批量下载出错:', error);
-      alert('下载过程出错，请刷新页面重试');
     }
-  };
 
-  // 添加按钮到容器
-  buttonContainer.appendChild(singleDownloadBtn);
-  buttonContainer.appendChild(batchDownloadBtn);
+    // 如果找到了插入位置
+    if (insertTarget) {
+        debugLog('找到插入位置:', insertTarget);
 
-  try {
-    // 将按钮容器插入到主题按钮的前面
-    const parentElement = themeButton.parentNode;
-    if (parentElement) {
-      parentElement.insertBefore(buttonContainer, themeButton);
-      debugLog('下载按钮添加完成');
+        // 创建下载按钮容器
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'cnki-download-buttons';
+
+        // 创建单个下载按钮
+        const singleDownloadBtn = document.createElement('button');
+        singleDownloadBtn.textContent = '单个下载';
+        singleDownloadBtn.className = 'cnki-download-btn secondary';
+        singleDownloadBtn.style.cssText = `
+          background-color: #f5f6f7;
+          color: #1e80ff;
+          border: 1px solid #e4e6eb;
+          padding: 4px 12px;
+          border-radius: 4px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          height: 26px;
+          line-height: 1;
+        `;
+        singleDownloadBtn.onclick = () => {
+          // 获取所有选中的复选框（包括全选框）
+          const allCheckboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+          
+          // 过滤掉全选框，只获取文章的复选框
+          const selectedCheckboxes = Array.from(allCheckboxes).filter(checkbox => {
+            // 检查是否是文章行的复选框（通过查找父级tr和文章链接来判断）
+            const row = checkbox.closest('tr');
+            return row && row.querySelector('a.fz14');
+          });
+          
+          // 如果选中多个文章，提示使用批量下载
+          if (selectedCheckboxes.length > 1) {
+            alert('已选择多篇文章，请使用批量下载按钮');
+            return;
+          }
+          
+          // 如果没有选中任何文章
+          if (selectedCheckboxes.length === 0) {
+            alert('请先选择要下载的文章');
+            return;
+          }
+
+          // 获取选中文章的信息
+          const row = selectedCheckboxes[0].closest('tr');
+          const titleLink = row.querySelector('a.fz14');
+          
+          if (titleLink) {
+            // 发送下载请求
+            chrome.runtime.sendMessage({
+              action: 'silentDownloadPDF',
+              url: titleLink.href,
+              title: titleLink.textContent.trim()
+            }, response => {
+              if (response?.error) {
+                debugLog('下载过程出错:', response.error);
+                alert(`下载失败: ${response.error}`);
+              }
+            });
+          } else {
+            alert('无法获取文章信息');
+          }
+        };
+
+        // 创建批量下载按钮
+        const batchDownloadBtn = document.createElement('button');
+        batchDownloadBtn.textContent = '批量下载';
+        batchDownloadBtn.className = 'cnki-download-btn primary';
+        batchDownloadBtn.style.cssText = `
+          background-color: #1e80ff;
+          color: white;
+          border: none;
+          padding: 4px 12px;
+          border-radius: 4px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          height: 26px;
+          line-height: 1;
+        `;
+        batchDownloadBtn.onclick = async () => {
+          try {
+            // 获取所有选中的复选框（过滤掉全选框）
+            const selectedCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
+              .filter(checkbox => {
+                const row = checkbox.closest('tr');
+                return row && row.querySelector('a.fz14');
+              });
+
+            if (selectedCheckboxes.length === 0) {
+              alert('请先选择要下载的文章');
+              return;
+            }
+
+            // 如果只选择了一篇文章，提示使用单个下载
+            if (selectedCheckboxes.length === 1) {
+              alert('只选择了一篇文章，请使用单个下载按钮');
+              return;
+            }
+
+            const articles = selectedCheckboxes.map(checkbox => {
+              const row = checkbox.closest('tr');
+              const titleLink = row.querySelector('a.fz14');
+              return titleLink ? {
+                url: titleLink.href,
+                title: titleLink.textContent.trim()
+              } : null;
+            }).filter(article => article !== null);
+
+            // 发送批量下载请求，使用新的批量下载消息类型
+            chrome.runtime.sendMessage({
+              action: 'batchDownloadWithSingleSave',
+              articles: articles
+            }, response => {
+              if (response?.error) {
+                debugLog('批量下载出错:', response.error);
+                alert(`批量下载失败: ${response.error}`);
+              } else {
+                debugLog('批量下载已开始');
+              }
+            });
+
+          } catch (error) {
+            debugLog('批量下载出错:', error);
+            alert('下载过程出错，请刷新页面重试');
+          }
+        };
+
+        // 添加按钮到容器
+        buttonContainer.appendChild(singleDownloadBtn);
+        buttonContainer.appendChild(batchDownloadBtn);
+
+        try {
+            if (insertBefore) {
+                insertTarget.insertBefore(buttonContainer, insertBefore);
+            } else {
+                insertTarget.appendChild(buttonContainer);
+            }
+            debugLog('下载按钮添加成功');
+            retryCount = 0; // 重置重试计数器
+            return;
+        } catch (error) {
+            debugLog('添加按钮时出错:', error);
+        }
+    }
+
+    // 如果没有找到合适的插入位置，增加重试计数并继续尝试
+    retryCount++;
+    if (retryCount < MAX_RETRIES) {
+        debugLog(`未找到合适的插入位置，${1000}ms后重试 (${retryCount}/${MAX_RETRIES})`);
+        setTimeout(addDownloadButtons, 1000);
     } else {
-      throw new Error('未找到主题按钮的父元素');
+        debugLog('无法找到合适的插入位置，已停止重试');
+        showNotification('无法加载下载按钮，请刷新页面重试');
     }
-  } catch (error) {
-    debugLog('添加按钮时出错:', error);
-    setTimeout(addDownloadButtons, 1000);
-  }
 }
 
-// 修改初始化逻辑
+// 修改初始化逻辑，增加延迟
 function initializeExtension() {
-  if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', () => {
-      addCustomStyles();
-      addDownloadButtons();
-      setupObserver();
-    });
-  } else {
-    addCustomStyles();
-    addDownloadButtons();
-    setupObserver();
-  }
+    retryCount = 0;
+    
+    // 添加一个小延迟，确保页面元素都加载完成
+    setTimeout(() => {
+        addCustomStyles();
+        addDownloadButtons();
+        setupObserver();
+    }, 1000);
 }
 
-// 设置观察者的函数
+// 修改观察者设置函数
 function setupObserver() {
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        if (!document.querySelector('.cnki-download-buttons')) {
-          addDownloadButtons();
-          break;
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                if (!document.querySelector('.cnki-download-buttons')) {
+                    // 重置重试计数器，因为这是新的尝试
+                    retryCount = 0;
+                    addDownloadButtons();
+                    break;
+                }
+            }
         }
-      }
+    });
+
+    const mainContent = document.querySelector('.main-content, #content, main');
+    if (mainContent) {
+        observer.observe(mainContent, {
+            childList: true,
+            subtree: true
+        });
+    } else {
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
     }
-  });
 
-  const mainContent = document.querySelector('.main-content, #content, main');
-  if (mainContent) {
-    observer.observe(mainContent, {
-      childList: true,
-      subtree: true
+    // 确保在页面卸载时停止观察
+    window.addEventListener('unload', () => {
+        observer.disconnect();
     });
-  } else {
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-  }
-
-  // 确保在页面卸载时停止观察
-  window.addEventListener('unload', () => {
-    observer.disconnect();
-  });
 }
 
 // 启动扩展
